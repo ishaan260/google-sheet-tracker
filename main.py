@@ -112,8 +112,8 @@ def check_url(url):
             page.on("request", handle_request)
 
             # Load page and wait
-            page.goto(url, timeout=180000, wait_until="networkidle")
-            page.mouse.wheel(0, 1000)
+            page.goto(url, timeout=150000, wait_until="networkidle")
+            page.mouse.wheel(0, 500)
             page.wait_for_timeout(5000)  # Wait 5s for background requests
 
             context.close()
@@ -169,3 +169,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
