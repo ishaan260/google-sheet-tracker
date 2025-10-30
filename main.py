@@ -1,3 +1,4 @@
+import os
 import json
 import gspread
 from google.oauth2.service_account import Credentials
@@ -5,6 +6,9 @@ from playwright.sync_api import sync_playwright
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import streamlit as st
+
+# ✅ Ensure Playwright Chromium is installed (for Streamlit Cloud)
+os.system("playwright install chromium > /dev/null 2>&1")
 
 # === CONFIGURATION ===
 SPREADSHEET_ID = "1CW62XUrBmI7O6LZ-2EUyw6oVKfx871oE2ZD_KF02fxg"   # ✅ Replace with your Sheet ID
@@ -35,15 +39,18 @@ samsung_s24 = {
     "has_touch": True,
 }
 
-
 # === GOOGLE SHEETS AUTH ===
 def authorize_gsheets():
     """Authorize Google Sheets using Streamlit secrets"""
-    creds_dict = st.secrets["google_service_account"]
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-    client = gspread.authorize(creds)
-    return client
+    try:
+        creds_dict = st.secrets["google_service_account"]
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        st.error(f"Google Sheets authorization failed: {e}")
+        st.stop()
 
 
 # === READ URLS ===
