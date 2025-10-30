@@ -13,7 +13,7 @@ if st.button("▶ Run Tracker Script"):
 
     # Run dream.py (your actual tracker script)
     process = subprocess.Popen(
-        ["python", "dream.py"],
+        ["python", "Dream.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True
@@ -34,4 +34,5 @@ if st.button("▶ Run Tracker Script"):
 
     st.text_area("📜 Logs", out, height=300)
 else:
+
     st.info("Click the button above to start the tracker.")
