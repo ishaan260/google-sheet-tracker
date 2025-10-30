@@ -7,31 +7,44 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import streamlit as st
 
-# ✅ Ensure Playwright Chromium is installed (auto on Streamlit Cloud)
+# ✅ Ensure Playwright Chromium is installed (for Streamlit Cloud)
 os.system("playwright install chromium > /dev/null 2>&1")
 
 # === CONFIGURATION ===
-SPREADSHEET_ID = "1CW62XUrBmI7O6LZ-2EUyw6oVKfx871oE2ZD_KF02fxg"  # ✅ Replace with your Sheet ID
+SPREADSHEET_ID = "1CW62XUrBmI7O6LZ-2EUyw6oVKfx871oE2ZD_KF02fxg"
 INPUT_SHEET_NAME = "Input"
 OUTPUT_SHEET_NAME = "Output"
 
+# Trackers to detect in network requests
 TRACKERS = [
-    "scorecard", "adform.ne", "adventity", "flashtalking",
-    "doubleverify", "moat", "gampad", "chartbeat", "collect?v=2", "trackimp"
+    "scorecard",
+    "adform.ne",
+    "adventity",
+    "flashtalking",
+    "doubleverify",
+    "moat",
+    "gampad",
+    "chartbeat",
+    "collect?v=2",
+    "trackimp"
 ]
 
-# Emulate Samsung Galaxy S24 mobile browser
+# Mobile device emulation (Samsung Galaxy S24)
 samsung_s24 = {
     "name": "Samsung Galaxy S24",
-    "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-S911B) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/114.0.5735.133 Mobile Safari/537.36",
+    "user_agent": "Mozilla/5.0 (Linux; Android 13; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.133 Mobile Safari/537.36",
     "viewport": {"width": 1080, "height": 2340},
     "device_scale_factor": 3,
     "is_mobile": True,
     "has_touch": True,
 }
 
+# === TIMEZONE ===
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_time():
+    """Return current time in IST formatted as string."""
+    return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
 # === GOOGLE SHEETS AUTH ===
 def authorize_gsheets():
@@ -43,7 +56,7 @@ def authorize_gsheets():
         client = gspread.authorize(creds)
         return client
     except Exception as e:
-        st.error(f"❌ Google Sheets authorization failed: {e}")
+        st.error(f"Google Sheets authorization failed: {e}")
         st.stop()
 
 
@@ -51,13 +64,13 @@ def authorize_gsheets():
 def read_urls_from_sheet(client):
     """Read URLs from the Input sheet"""
     sheet = client.open_by_key(SPREADSHEET_ID).worksheet(INPUT_SHEET_NAME)
-    urls = sheet.col_values(1)[1:]  # Skip header
-    return [u.strip() for u in urls if u.strip()]
+    urls = sheet.col_values(1)[1:]  # Skip header row
+    return [url.strip() for url in urls if url.strip()]
 
 
 # === WRITE RESULTS ===
 def write_results_to_sheet(client, results):
-    """Write results to Output sheet"""
+    """Write tracking results to Output sheet"""
     sheet = client.open_by_key(SPREADSHEET_ID).worksheet(OUTPUT_SHEET_NAME)
     header = ["url", "error", "checked_at"] + TRACKERS
     rows = [header]
@@ -70,15 +83,12 @@ def write_results_to_sheet(client, results):
     sheet.update("A1", rows, value_input_option="RAW")
 
 
-# === CHECK URL ===
+# === TRACKER CHECKER ===
 def check_url(url):
-    """Check a single URL for trackers"""
-    tracker_status = {t: False for t in TRACKERS}
+    """Check a single URL for tracker activity"""
+    tracker_status = {tracker: False for tracker in TRACKERS}
     error_msg = ""
-
-    # ✅ Get current time in IST (UTC+5:30)
-    IST = timezone(timedelta(hours=5, minutes=30))
-    checked_at = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+    checked_at = get_ist_time()  # ✅ IST time
 
     try:
         with sync_playwright() as p:
@@ -88,29 +98,36 @@ def check_url(url):
                 viewport=samsung_s24["viewport"],
                 device_scale_factor=samsung_s24["device_scale_factor"],
                 is_mobile=samsung_s24["is_mobile"],
-                has_touch=samsung_s24["has_touch"]
+                has_touch=samsung_s24["has_touch"],
             )
             page = context.new_page()
 
+            # Listen to all network requests
             def handle_request(request):
                 req_url = request.url.lower()
-                for t in TRACKERS:
-                    if t in req_url:
-                        tracker_status[t] = True
+                for tracker in TRACKERS:
+                    if tracker in req_url:
+                        tracker_status[tracker] = True
 
             page.on("request", handle_request)
-            page.goto(url, timeout=150000, wait_until="networkidle")
-            page.mouse.wheel(0, 500)
-            page.wait_for_timeout(5000)
+
+            # Load page and wait
+            page.goto(url, timeout=180000, wait_until="networkidle")
+            page.mouse.wheel(0, 1000)
+            page.wait_for_timeout(5000)  # Wait 5s for background requests
 
             context.close()
             browser.close()
+
     except Exception as e:
         error_msg = str(e)
 
     result = {"url": url, "error": error_msg, "checked_at": checked_at}
     result.update(tracker_status)
-    print(f"✅ Checked: {url} at {checked_at}")
+
+    # ✅ Print IST timestamp in logs too
+    print(f"[{checked_at}] Checked: {url} -> {tracker_status}")
+
     return result
 
 
@@ -118,29 +135,36 @@ def check_url(url):
 def main():
     st.set_page_config(page_title="Google Sheet Tracker", page_icon="🔍", layout="wide")
     st.title("🔍 Google Sheets Tracker Tool")
-    st.write("Check your Google Sheet URLs for trackers using Playwright automation.")
+    st.write("This tool checks your Google Sheet URLs for tracker requests using Playwright.")
+    st.write(f"🕒 Current Time (IST): **{get_ist_time()}**")
 
     if st.button("🚀 Run Tracker"):
         st.info("Running tracker... please wait.")
-        client = authorize_gsheets()
-        urls = read_urls_from_sheet(client)
+
+        try:
+            client = authorize_gsheets()
+            urls = read_urls_from_sheet(client)
+        except Exception as e:
+            st.error(f"Google Sheets authorization failed: {e}")
+            return
 
         if not urls:
             st.warning("No URLs found in the Input sheet.")
             return
 
         st.write(f"Found **{len(urls)} URLs** to check...")
-        results = []
 
+        results = []
         with ThreadPoolExecutor(max_workers=3) as executor:
-            for r in executor.map(check_url, urls):
-                results.append(r)
+            for res in executor.map(check_url, urls):
+                results.append(res)
 
         try:
             write_results_to_sheet(client, results)
-            st.success(f"✅ Results written to Google Sheet '{OUTPUT_SHEET_NAME}' successfully!")
+            st.success(f"✅ Results written to Google Sheet '{OUTPUT_SHEET_NAME}' tab!")
+            st.write(f"🕒 Completed at (IST): **{get_ist_time()}**")
         except Exception as e:
-            st.error(f"❌ Error writing results: {e}")
+            st.error(f"Error writing results: {e}")
 
 
 if __name__ == "__main__":
